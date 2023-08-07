@@ -174,3 +174,41 @@ def test_inference(args, model, dataset):
     avg_mse = mse / len(data_loader)
 
     return avg_loss, avg_mse, nrmse, final_prediction, final_truth
+
+
+def get_warm_model_new(args, model, x_series, y_series):
+
+    ds = Data(x_series, y_series)
+    warm_loader = DataLoader(ds, shuffle=True, batch_size=32)
+    device = 'cuda' if args.gpu else 'cpu'
+    model.train()
+    epoch_loss = []
+    lr = args.lr
+    if args.opt == 'adam':
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    elif args.opt == 'sgd':
+        optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum)
+
+    criterion = nn.MSELoss().to(device)
+
+    for iter in range(warm_batch=100):
+        batch_loss = []
+
+        for batch_idx, (data, target) in enumerate(warm_loader):
+            # Move data and target to GPU if available
+            data = data.float().to(device)
+            target = target.float().to(device)
+
+            model.zero_grad()
+            pred = model(data)
+            loss = criterion(pred, target.unsqueeze(-1))
+            loss.backward()
+            optimizer.step()
+
+            batch_loss.append(loss.item())
+
+        epoch_loss.append(sum(batch_loss)/len(batch_loss))
+
+    return model.state_dict()
+
+    
