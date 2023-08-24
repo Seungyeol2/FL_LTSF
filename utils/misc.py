@@ -20,6 +20,7 @@ import os
 from scipy import linalg
 from sklearn import metrics
 from torch.utils.data import Dataset, DataLoader
+from scipy.spatial.distance import pdist
 
 
 class MinMaxNormalization(object):
@@ -159,6 +160,7 @@ def args_parser():
     parser.add_argument('--shallow', type=str, default='svr', help='shallow algorithms')
 
     args = parser.parse_args()
+
     return args
 
 
@@ -195,6 +197,70 @@ def get_data(args):
 
     return normalized_df, df_cells, selected_cells, mean, std, cell_lng, cell_lat
 
+def cell_selection(df_stats, n=10):
+    """
+    Select top n cells based on combined criteria of jfi and cv.
+    
+    :param data: DataFrame containing traffic volumes for each cell.
+    :param n: Number of top cells to select. Default is 10.
+    :return: List of top n cell IDs based on combined criteria.
+    """
+    data_dist = pdist(df_stats.values)
+    
+    # Calculate jfi and cv for each cell
+    jfi_values = df_stats.apply(jfi, axis=0)
+    cv_values = df_stats.apply(cv, axis=0)
+    
+    # Combine the two metrics. This is a simple way and can be adjusted based on priorities.
+    combined_scores = jfi_values * (1 - cv_values)
+    print(combined_scores.index)
+
+    # Select the top cells based on the combined score
+    top_cells = combined_scores.sort_values(ascending=False).head(n).index.tolist()
+    
+    return top_cells
+
+def select_cells_for_round(df_stats, selected_cells, n=10, percentage_from_top=0.7):
+    """
+    Select n cells for a training round. Percentage of the cells are taken from the top ranked
+    based on jfi and cv, and the rest are randomly chosen.
+    
+    :param df_stats: DataFrame containing statistical mean of the traffic data for each cell.
+    :param n: Total number of cells to select.
+    :param percentage_from_top: Percentage of cells to select from the top ranked.
+    :return: List of n cell IDs.
+    """
+
+    # Calculate jfi and cv for each cell
+    jfi_values = df_stats.apply(jfi, axis=0)
+    cv_values = df_stats.apply(cv, axis=0)
+    
+    # Combine the two metrics
+    combined_scores = jfi_values * (1 - cv_values)
+    combined_scores.index = df_stats.columns
+
+    # Ensure only selected cells are considered
+    combined_scores = combined_scores[selected_cells]
+
+    # Determine the number of top cells to select
+    top_n = int(n * percentage_from_top)
+    
+    # Select the top cells
+    top_cells = combined_scores.sort_values(ascending=False).head(top_n).index.tolist()
+
+    # If top_cells already contain all the required cells, return them
+    if len(top_cells) == n:
+        return top_cells
+
+    # Otherwise, pick the remaining from the selected cells
+    remaining_cells = [cell for cell in selected_cells if cell not in top_cells]
+    random_sample_size = n - len(top_cells)
+    random_cells = random.sample(remaining_cells, random_sample_size)
+    
+    # Combine the selected cells
+    selected_cells_for_round = top_cells + random_cells
+    
+    return selected_cells_for_round
 
 def get_cluster_label(args, df_traffic, lng, lat):
     df_ori = copy.deepcopy(df_traffic)
@@ -424,6 +490,19 @@ def process_isolated(args, dataset):
         test[col] = (test_x_close, test_x_period, test_label)
 
     return train, val, test
+
+def new_average_weights(w):
+    """
+    return the averaged weights of trend weights
+    :param w: a list of trend weight tensors
+    :return: averaged weight tensor
+    """
+    w_avg = w[0].clone()
+    for i in range(1, len(w)):
+        w_avg += w[i]
+    w_avg = torch.div(w_avg, len(w))
+
+    return w_avg
 
 
 def average_weights(w):

@@ -12,12 +12,15 @@ import pandas as pd
 import sys
 import random
 from argparse import Namespace
-
+from sklearn import metrics
+from scipy.spatial.distance import pdist
 
 sys.path.append('../')
 from utils.misc import args_parser, average_weights
 from utils.misc import get_data, process_isolated 
 from utils.misc import time_slide_df, restart_index
+from utils.misc import cell_selection, jfi, cv, select_cells_for_round
+
 from utils.models import LSTM
 from models import Informer, Autoformer, Transformer, DLinear, Linear, NLinear
 
@@ -26,6 +29,12 @@ from sklearn import metrics
 
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
+
+def get_stat_mean(d):
+    d = d.iloc[:-24 * args.test_days, :]
+    df_avg = d.groupby([d.index.isocalendar().week, d.index.hour]).mean().reset_index().iloc[:, 2:]
+    df_avg = (df_avg - df_avg.mean()) / df_avg.std()
+    return copy.deepcopy(df_avg.T)
 
 if __name__ == '__main__':
     args = args_parser()
@@ -43,8 +52,6 @@ if __name__ == '__main__':
     test_df = restart_index(test_df)
 
     device = 'cuda' if args.gpu else 'cpu'
-    # print(selected_cells)
-
     parameter_list = 'FedAvg-data-{:}-type-{:}-'.format(args.file, args.type)
     parameter_list += '-frac-{:.2f}-le-{:}-lb-{:}-seed-{:}'.format(args.frac, args.local_epoch,
                                                                    args.local_bs,
@@ -52,6 +59,14 @@ if __name__ == '__main__':
     log_id = args.directory + parameter_list
     train, val, test = process_isolated(args, data)
 
+    # get the statistical mean of the traffic data
+    df_stats = get_stat_mean(data)
+    #print("df_stats :", df_stats.columns)
+    #print(df_stats)
+    data_dist = pdist(df_stats.values)
+    data_jfi = jfi(np.array(data_dist))
+    data_cv = cv(np.array(data_dist))
+    print('jfi: {:.4f}, cv: {:.4f}'.format(data_jfi, data_cv))
 
     configs = Namespace(
         seq_len = 72,
@@ -63,6 +78,7 @@ if __name__ == '__main__':
     global_model = DLinear.Model(configs).to(device)
     global_model.train()
     global_weights = global_model.state_dict()
+
     print("Global Model: ", global_model )
 
     # global_model = LSTM(args).to(device)
@@ -83,15 +99,28 @@ if __name__ == '__main__':
     loss_hist = []
 
     print("____________Training Start____________")
+
+    threshold = int(args.epochs * 0.3)  # 30% of total epochs
+
     for epoch in tqdm.tqdm(range(args.epochs)):
         local_weights, local_losses = [], []
         # print(f'\n | Global Training Round: {epoch+1} |\n')
         global_model.train()
 
-        m = max(int(args.frac * args.bs), 1)
-        cell_idx = random.sample(selected_cells, m)
-        # print(cell_idx)
-        
+        #m = max(int(args.frac * args.bs), 1)
+        #cell_idx = random.sample(selected_cells, m)
+        '''
+        # If epoch is within the first 30% of total epochs, use random sampling.
+        if epoch < threshold:
+            cell_idx = random.sample(selected_cells, m)
+        # For the remaining 70%, use a different sampling method 
+        else:
+            # cell_idx = your_other_sampling_method()
+        '''
+
+        cell_idx = select_cells_for_round(df_stats, selected_cells)
+        print("cell_idx: ", cell_idx)
+        print(len(cell_idx))
         for cell in cell_idx:
             #cell_train, cell_test = train[cell], test[cell]
             cell_train_x, cell_train_y = train_x[cell], train_y[cell]
