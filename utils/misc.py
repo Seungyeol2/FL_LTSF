@@ -145,7 +145,7 @@ def args_parser():
     parser.add_argument('--no_warm_up', dest='warm_up', action='store_false',
                         help='do not use warm up')
     parser.set_defaults(warm_up=True)
-    parser.add_argument('--w_epoch', type=int, default=150,
+    parser.add_argument('--w_epoch', type=int, default=1,
                         help='epochs when training warm-up model')
     parser.add_argument('--w_lr', type=float, default=1e-4, help='warm up learning rate')
     parser.add_argument('--rho', type=float, default=0.2, help='warm up model importance')

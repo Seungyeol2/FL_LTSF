@@ -12,7 +12,8 @@ import pandas as pd
 import sys
 import random
 from argparse import Namespace
-
+import matplotlib.pyplot as plt
+import csv
 
 sys.path.append('../')
 from utils.misc import args_parser, average_weights
@@ -110,6 +111,22 @@ if __name__ == '__main__':
             cell_loss.append(loss)
 
         loss_hist.append(sum(cell_loss)/len(cell_loss))
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(loss_hist, '-o', label='Global Model Loss')
+        plt.title('Global Model Loss Over Rounds')
+        plt.xlabel('Rounds')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.savefig('global_model_loss.png')  # 파일 저장
+        plt.show()
+
+        # 손실 데이터를 CSV 파일로 저장
+        with open('[FedAvg]global_model_loss.csv', 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["Round", "Loss"])  # 컬럼 헤더 작성
+            for i, loss in enumerate(loss_hist):
+                writer.writerow([i, loss])
 
         # Update global model
         global_weights = average_weights(local_weights)

@@ -100,7 +100,7 @@ if __name__ == '__main__':
 
     print("____________Training Start____________")
 
-    threshold = int(args.epochs * 0.3)  # 30% of total epochs
+    threshold = int(args.epochs * 0.5)  # 30% of total epochs
 
     for epoch in tqdm.tqdm(range(args.epochs)):
         local_weights, local_losses = [], []
@@ -109,16 +109,14 @@ if __name__ == '__main__':
 
         #m = max(int(args.frac * args.bs), 1)
         #cell_idx = random.sample(selected_cells, m)
-        '''
+        
         # If epoch is within the first 30% of total epochs, use random sampling.
-        if epoch < threshold:
+        if epoch > threshold:
             cell_idx = random.sample(selected_cells, m)
         # For the remaining 70%, use a different sampling method 
         else:
-            # cell_idx = your_other_sampling_method()
-        '''
+            cell_idx = cell_selection(df_stats)
 
-        cell_idx = select_cells_for_round(df_stats, selected_cells)
         print("cell_idx: ", cell_idx)
         print(len(cell_idx))
         for cell in cell_idx:
