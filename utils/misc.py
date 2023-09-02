@@ -193,9 +193,10 @@ def get_data(args):
     mean = train_data.mean()
     std = train_data.std()
 
+
     normalized_df = (df_cells - mean) / std
 
-    return normalized_df, df_cells, selected_cells, mean, std, cell_lng, cell_lat
+    return normalized_df, df_cells, selected_cells, mean, std, cell_lng, cell_lat, df
 
 def cell_selection(df_stats, n=10):
     """
