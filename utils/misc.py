@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 import copy
 import torch
+from torch import nn
 import torch.nn.functional as F
 from sklearn import cluster
 import random
@@ -21,7 +22,100 @@ from scipy import linalg
 from sklearn import metrics
 from torch.utils.data import Dataset, DataLoader
 from scipy.spatial.distance import pdist
+from statsmodels.tsa.seasonal import seasonal_decompose
+from sklearn.linear_model import LinearRegression
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
 
+def find_optimal_clusters(data, max_clusters):
+    silhouette_vals = []
+    
+    for cluster in range(2, max_clusters):  # Start from 2 because silhouette score requires at least 2 clusters
+        kmeans = KMeans(n_jobs=-1, n_clusters=cluster, random_state=0).fit(data)
+        silhouette_vals.append(silhouette_score(data, kmeans.labels_))
+    
+    optimal_cluster_num = silhouette_vals.index(max(silhouette_vals)) + 2  # +2 because the range starts from 2
+    return optimal_cluster_num    
+
+def get_cluster_id(df):
+    max_clusters = 10
+    df.dropna(inplace=True)
+    # 클러스터 개수 찾기
+    optimal_n_clusters = find_optimal_clusters(df.T, max_clusters)
+    # K-means 알고리즘 적용
+    kmeans = KMeans(n_clusters=optimal_n_clusters, random_state=0).fit(df.T)  # Transpose to get 100 samples
+    # 라벨 가져오기
+    labels = kmeans.labels_
+    cell_labels = pd.DataFrame({'Cell': df.columns, 'Cluster': labels})
+    cell_labels_series = cell_labels.set_index('Cell')['Cluster']
+    # 각 클러스터에 속한 클라이언트 수 계산
+    cluster_counts = cell_labels.groupby('Cluster').size()
+
+    # 결과 출력
+    print(cluster_counts)
+
+    return cell_labels_series, optimal_n_clusters
+
+class Data(Dataset):
+    def __init__(self, X, Y):
+        self.X = X
+        self.Y = Y
+
+    def __len__(self):
+        return len(self.Y)
+    
+    def __getitem__(self, idx):
+        return self.X[idx], self.Y[idx]
+    
+def local_adaptation(args, model, x, y):
+    model.train()
+    epoch_loss = []
+    lr = 0.0001
+    device = 'cuda' if args.gpu else 'cpu'
+    criterion = nn.MSELoss().to(device)
+
+    if args.opt == 'adam':
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    elif args.opt == 'sgd':
+        optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum)
+
+    ds = Data(x, y)
+    data_loader = DataLoader(ds, shuffle=True, batch_size=32)
+
+    for iter in range(1):
+        batch_loss = []
+
+        for batch_idx, (data, target) in enumerate(data_loader):
+            # Move data and target to GPU if available
+            data = data.float().to(device)
+            target = target.float().to(device)
+
+            model.zero_grad()
+            pred = model(data)
+            loss = criterion(pred, target.unsqueeze(-1))
+            loss.backward()
+            optimizer.step()
+            batch_loss.append(loss.item())
+
+        epoch_loss.append(sum(batch_loss) / len(batch_loss))
+        print("Local Loss: ",sum(epoch_loss)/len(epoch_loss))
+    return model
+
+def average_tensors(tensor_list):
+    if len(tensor_list) == 0:  # Check for empty list
+        return None  # Or some other default value
+    
+    # Initialize an empty tensor to store the sum
+    sum_tensor = torch.zeros_like(tensor_list[0])
+    
+    # Sum up all tensors
+    for tensor in tensor_list:
+        sum_tensor += tensor
+    
+    # Calculate the average
+    avg_tensor = sum_tensor / len(tensor_list)
+    
+    return avg_tensor
 
 class MinMaxNormalization(object):
     '''MinMax Normalization --> [-1, 1]
@@ -50,7 +144,6 @@ class MinMaxNormalization(object):
         X = (X + 1.) / 2.
         X = 1. * X * (self.max - self.min) + self.min
         return X
-
 
 class MinMaxNormalization_01(object):
     '''MinMax Normalization --> [0, 1]
@@ -144,7 +237,7 @@ def args_parser():
                         help='use warm up model?')
     parser.add_argument('--no_warm_up', dest='warm_up', action='store_false',
                         help='do not use warm up')
-    parser.set_defaults(warm_up=True)
+    parser.set_defaults(warm_up=False)
     parser.add_argument('--w_epoch', type=int, default=1,
                         help='epochs when training warm-up model')
     parser.add_argument('--w_lr', type=float, default=1e-4, help='warm up learning rate')
@@ -158,10 +251,58 @@ def args_parser():
                         help='directory to store result')
     parser.add_argument('--seed', type=int, default=1, help='random seeds')
     parser.add_argument('--shallow', type=str, default='svr', help='shallow algorithms')
+    parser.add_argument('--n_cluster_t', type=int, default='3', help='number of trend cluster')
+    parser.add_argument('--n_cluster_s', type=int, default='4', help='number of seasonal cluster')
 
     args = parser.parse_args()
 
     return args
+
+def get_trend_labels(df):
+    # 빈 Series 생성
+    trend_labels = pd.Series(index=df.columns, dtype='object')
+
+    # 각 열(column)에 대한 라벨링 수행
+    for column in df.columns:
+        y = df[column].dropna()  # NaN 제거
+        X = np.array(range(len(y))).reshape(-1, 1)
+        
+        if len(y) > 1:  # 데이터가 충분해야 회귀를 실행할 수 있습니다. 
+            try:
+                model = LinearRegression()
+                model.fit(X, y)
+                slope = model.coef_[0]  # coef_ returns a 1D array
+                trend_labels[column] = 'UP' if slope > 0 else 'DOWN'
+            except Exception as e:
+                print(f"Error for column {column}: {e}")
+                trend_labels[column] = f'ERROR: {str(e)}'
+        else:
+            trend_labels[column] = 'NOT ENOUGH DATA'
+
+    return trend_labels
+
+def decompose_data(df):
+    # 각 열(column)에 대한 분해(decomposition) 수행
+    decomposed_trend = pd.DataFrame(index=df.index)
+    decomposed_seasonal = pd.DataFrame(index=df.index)
+    for column in df.columns:
+        series = df[column]
+        
+        # 결측값이 있으면 처리
+        series.dropna(inplace=True)
+
+        # series가 너무 짧으면 분해할 수 없으므로 건너뜀
+        if len(series) < 2:
+            continue
+
+        try:
+            result = seasonal_decompose(series, model='additive', period=24)  # 주기는 데이터에 따라 조정해야 함
+            decomposed_trend[column] = result.trend
+            decomposed_seasonal[column] = result.seasonal
+        except Exception as e:
+            print(f"An exception occurred for column {column}: {e}"
+                  )
+    return decomposed_trend, decomposed_seasonal
 
 
 def get_data(args):
@@ -196,72 +337,11 @@ def get_data(args):
 
     normalized_df = (df_cells - mean) / std
 
-    return normalized_df, df_cells, selected_cells, mean, std, cell_lng, cell_lat, df
+    normalized_ori_df = (df - mean) / std
+    normalized_ori_df = normalized_ori_df.reset_index()
+    normalized_ori_df = normalized_ori_df.rename(columns={'index': 'date_time'})
 
-def cell_selection(df_stats, n=10):
-    """
-    Select top n cells based on combined criteria of jfi and cv.
-    
-    :param data: DataFrame containing traffic volumes for each cell.
-    :param n: Number of top cells to select. Default is 10.
-    :return: List of top n cell IDs based on combined criteria.
-    """
-    data_dist = pdist(df_stats.values)
-    
-    # Calculate jfi and cv for each cell
-    jfi_values = df_stats.apply(jfi, axis=0)
-    cv_values = df_stats.apply(cv, axis=0)
-    
-    # Combine the two metrics. This is a simple way and can be adjusted based on priorities.
-    combined_scores = jfi_values * (1 - cv_values)
-    print(combined_scores.index)
-
-    # Select the top cells based on the combined score
-    top_cells = combined_scores.sort_values(ascending=False).head(n).index.tolist()
-    
-    return top_cells
-
-def select_cells_for_round(df_stats, selected_cells, n=10, percentage_from_top=0.7):
-    """
-    Select n cells for a training round. Percentage of the cells are taken from the top ranked
-    based on jfi and cv, and the rest are randomly chosen.
-    
-    :param df_stats: DataFrame containing statistical mean of the traffic data for each cell.
-    :param n: Total number of cells to select.
-    :param percentage_from_top: Percentage of cells to select from the top ranked.
-    :return: List of n cell IDs.
-    """
-
-    # Calculate jfi and cv for each cell
-    jfi_values = df_stats.apply(jfi, axis=0)
-    cv_values = df_stats.apply(cv, axis=0)
-    
-    # Combine the two metrics
-    combined_scores = jfi_values * (1 - cv_values)
-    combined_scores.index = df_stats.columns
-
-    # Ensure only selected cells are considered
-    combined_scores = combined_scores[selected_cells]
-
-    # Determine the number of top cells to select
-    top_n = int(n * percentage_from_top)
-    
-    # Select the top cells
-    top_cells = combined_scores.sort_values(ascending=False).head(top_n).index.tolist()
-
-    # If top_cells already contain all the required cells, return them
-    if len(top_cells) == n:
-        return top_cells
-
-    # Otherwise, pick the remaining from the selected cells
-    remaining_cells = [cell for cell in selected_cells if cell not in top_cells]
-    random_sample_size = n - len(top_cells)
-    random_cells = random.sample(remaining_cells, random_sample_size)
-    
-    # Combine the selected cells
-    selected_cells_for_round = top_cells + random_cells
-    
-    return selected_cells_for_round
+    return normalized_df, df_cells, selected_cells, mean, std, cell_lng, cell_lat, df, normalized_ori_df
 
 def get_cluster_label(args, df_traffic, lng, lat):
     df_ori = copy.deepcopy(df_traffic)
@@ -305,8 +385,6 @@ def get_cluster_label(args, df_traffic, lng, lat):
         return km_tp.labels_
     else:
         return km_tp.labels_
-
-
 def process_centralized(args, dataset):
     train_x_close, val_x_close, test_x_close = [], [], []
     train_x_period, val_x_period, test_x_period = [], [], []
@@ -383,7 +461,6 @@ def process_centralized(args, dataset):
     test_y = np.concatenate(test_label)
 
     return (train_xc, train_xp, train_y), (val_xc, val_xp, val_y), (test_xc, test_xp, test_y)
-
 def restart_index(df):
     df_reset_index = df.reset_index(drop=True)
     df_reset_index.index = df_reset_index.index
@@ -422,8 +499,6 @@ def time_slide_df(df, window_size, forecast_size):
         date_dict[col] = np.array(date_dict[col])
     
     return x_dict, y_dict, date_dict
-
-
 def process_isolated(args, dataset):
     train, val, test = dict(), dict(), dict()
     column_names = dataset.columns
@@ -505,7 +580,6 @@ def new_average_weights(w):
 
     return w_avg
 
-
 def average_weights(w):
     """
     return the averaged weights of local model
@@ -519,7 +593,6 @@ def average_weights(w):
         w_avg[key] = torch.div(w_avg[key], len(w))
 
     return w_avg
-
 
 def average_weights_att(w_clients, w_server, epsilon=1.0):
     w_next = copy.deepcopy(w_server)
@@ -543,7 +616,6 @@ def average_weights_att(w_clients, w_server, epsilon=1.0):
         w_next[k] = w_server[k] - torch.mul(att_weight, epsilon)
 
     return w_next
-
 
 def avg_dual_att(w_clients, w_server, warm_server, epsilon=1.0, rho=0.1):
     w_next = copy.deepcopy(w_server)
@@ -576,7 +648,6 @@ def avg_dual_att(w_clients, w_server, warm_server, epsilon=1.0, rho=0.1):
         w_next[k] = w_server[k] - torch.mul(att_weight, epsilon)
 
     return w_next
-
 
 def get_warm_up_data(args, data):
     close_arr, period_arr, label_arr = [], [], []

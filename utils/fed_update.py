@@ -69,7 +69,7 @@ class LocalUpdate(object):
                 optimizer.step()
 
                 batch_loss.append(loss.item())
-
+ 
             epoch_loss.append(sum(batch_loss)/len(batch_loss))
 
         return model.state_dict(), sum(epoch_loss)/len(epoch_loss), epoch_loss
