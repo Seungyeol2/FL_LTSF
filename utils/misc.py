@@ -98,7 +98,7 @@ def local_adaptation(args, model, x, y):
             batch_loss.append(loss.item())
 
         epoch_loss.append(sum(batch_loss) / len(batch_loss))
-        print("Local Loss: ",sum(epoch_loss)/len(epoch_loss))
+        #print("Local Loss: ",sum(epoch_loss)/len(epoch_loss))
     return model
 
 def average_tensors(tensor_list):
@@ -252,7 +252,7 @@ def args_parser():
     parser.add_argument('--seed', type=int, default=1, help='random seeds')
     parser.add_argument('--shallow', type=str, default='svr', help='shallow algorithms')
     parser.add_argument('--n_cluster_t', type=int, default='3', help='number of trend cluster')
-    parser.add_argument('--n_cluster_s', type=int, default='4', help='number of seasonal cluster')
+    parser.add_argument('--n_cluster_s', type=int, default='2', help='number of seasonal cluster')
     parser.add_argument('--local_adapt', action='store_true', default=False, help='personalization of local model')
     args = parser.parse_args()
 
