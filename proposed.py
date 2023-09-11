@@ -69,8 +69,8 @@ if __name__ == '__main__':
 
     # Decompose Traffic Data
     decomposed_trend, decomposed_seasonal = decompose_data(normalized_df)
-    trend_labels, n_trend_clusters = get_cluster_id(decomposed_trend)
-    seasonal_labels, n_seasonal_clusters = get_cluster_id(decomposed_seasonal)
+    trend_labels, n_trend_clusters = get_cluster_id(decomposed_trend, args.n_cluster_t)
+    seasonal_labels, n_seasonal_clusters = get_cluster_id(decomposed_seasonal, args.n_cluster_s)
     #print("Cell 8319 trend_lables: ", trend_labels[8319])
     #print("Cell 8319 seasonal_labels: ", seasonal_labels[8319])
 

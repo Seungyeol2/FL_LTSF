@@ -37,13 +37,13 @@ def find_optimal_clusters(data, max_clusters):
     optimal_cluster_num = silhouette_vals.index(max(silhouette_vals)) + 2  # +2 because the range starts from 2
     return optimal_cluster_num    
 
-def get_cluster_id(df):
-    max_clusters = 10
+def get_cluster_id(df, n):
+    #max_clusters = 10
     df.dropna(inplace=True)
     # 클러스터 개수 찾기
-    optimal_n_clusters = find_optimal_clusters(df.T, max_clusters)
+    #optimal_n_clusters = find_optimal_clusters(df.T, max_clusters)
     # K-means 알고리즘 적용
-    kmeans = KMeans(n_clusters=optimal_n_clusters, random_state=0).fit(df.T)  # Transpose to get 100 samples
+    kmeans = KMeans(n_clusters=n, random_state=0).fit(df.T)  # Transpose to get 100 samples
     # 라벨 가져오기
     labels = kmeans.labels_
     cell_labels = pd.DataFrame({'Cell': df.columns, 'Cluster': labels})
@@ -54,7 +54,7 @@ def get_cluster_id(df):
     # 결과 출력
     print(cluster_counts)
 
-    return cell_labels_series, optimal_n_clusters
+    return cell_labels_series, n
 
 class Data(Dataset):
     def __init__(self, X, Y):
