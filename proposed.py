@@ -236,9 +236,13 @@ if __name__ == '__main__':
         global_model.load_state_dict(new_state_dict)
 
         #Local adaptation
-        adapted_model = local_adaptation(args, global_model, cell_train_x, cell_train_y)
+        if args.local_adapt == True:
+            infer_model = local_adaptation(args, global_model, cell_train_x, cell_train_y)
+        else:
+            infer_model = global_model
 
-        test_loss, test_mse, test_nrmse, pred[cell], truth[cell] = test_inference_new(args, adapted_model, cell_test_x, cell_test_y)
+
+        test_loss, test_mse, test_nrmse, pred[cell], truth[cell] = test_inference_new(args, infer_model, cell_test_x, cell_test_y)
         print(f'Cluster:{trend_labels[cell]} Cell:{cell} MSE:{test_mse:.4f}')
         nrmse += test_nrmse
 
