@@ -1,11 +1,6 @@
 # -*- coding: utf-8 -*-
 """
------------------------------------------------
-# File: misc.py
-# This file is created by Chuanting Zhang
-# Email: chuanting.zhang@kaust.edu.sa
-# Date: 2020-07-26 (YYYY-MM-DD)
------------------------------------------------
+
 """
 import argparse
 import h5py
@@ -253,6 +248,9 @@ def args_parser():
     parser.add_argument('--shallow', type=str, default='svr', help='shallow algorithms')
     parser.add_argument('--n_cluster_t', type=int, default='3', help='number of trend cluster')
     parser.add_argument('--n_cluster_s', type=int, default='4', help='number of seasonal cluster')
+
+
+    parser.add_argument('--local_adapt', action='store_true', default=False, help='personalization of local model')
 
     args = parser.parse_args()
 
