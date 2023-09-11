@@ -225,7 +225,7 @@ if __name__ == '__main__':
     global_model.load_state_dict(global_weights)
 
     for cell in selected_cells:
-        #cell_train_x, cell_train_y = train_x[cell], train_y[cell]
+        cell_train_x, cell_train_y = train_x[cell], train_y[cell]
         cell_test_x, cell_test_y = test_x[cell], test_y[cell]
         # Choose the appropriate global model based on the trend of the cell
         # 복사본을 만들어서 수정
@@ -236,9 +236,12 @@ if __name__ == '__main__':
         global_model.load_state_dict(new_state_dict)
 
         #Local adaptation
-        adapted_model = local_adaptation(args, global_model, cell_train_x, cell_train_y)
+        if args.local_adapt == True:
+            infer_model = local_adaptation(args, global_model, cell_train_x, cell_train_y)
+        else:
+            infer_model = global_model
 
-        test_loss, test_mse, test_nrmse, pred[cell], truth[cell] = test_inference_new(args, adapted_model, cell_test_x, cell_test_y)
+        test_loss, test_mse, test_nrmse, pred[cell], truth[cell] = test_inference_new(args, infer_model, cell_test_x, cell_test_y)
         print(f'Cluster:{trend_labels[cell]} Cell:{cell} MSE:{test_mse:.4f}')
         nrmse += test_nrmse
 
@@ -252,5 +255,5 @@ if __name__ == '__main__':
     mse = metrics.mean_squared_error(df_pred.values.ravel(), df_truth.values.ravel())
     mae = metrics.mean_absolute_error(df_pred.values.ravel(), df_truth.values.ravel())
     nrmse = nrmse / len(selected_cells)
-    print('FedAvg File: {:} Type: {:} MSE: {:.4f} MAE: {:.4f}, NRMSE: {:.4f}, Seed: {}, n_cluster_t: {}, n_cluster_s: {}'.format(args.file, args.type, mse, mae,
-                                                                                     nrmse,args.seed, n_trend_clusters, n_seasonal_clusters))
+    print('FedAvg File: {:} Type: {:} MSE: {:.4f} MAE: {:.4f}, NRMSE: {:.4f}, Seed: {}, n_cluster_t: {}, n_cluster_s: {}, is_local_adapt: {}'.format(args.file, args.type, mse, mae,
+                                                                                     nrmse,args.seed, n_trend_clusters, n_seasonal_clusters,args.local_adapt))
