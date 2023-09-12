@@ -279,5 +279,5 @@ if __name__ == '__main__':
     mse = metrics.mean_squared_error(df_pred.values.ravel(), df_truth.values.ravel())
     mae = metrics.mean_absolute_error(df_pred.values.ravel(), df_truth.values.ravel())
     nrmse = nrmse / len(selected_cells)
-    print('FedAvg File: {:} Type: {:} MSE: {:.4f} MAE: {:.4f}, NRMSE: {:.4f}, Seed: {}, n_cluster_t: {}, n_cluster_s: {}'.format(args.file, args.type, mse, mae,
-                                                                                     nrmse,args.seed, n_trend_clusters, n_seasonal_clusters))
+    print('FedAvg File: {:} Type: {:} MSE: {:.4f} MAE: {:.4f}, NRMSE: {:.4f}, Seed: {}, n_cluster_t: {}, n_cluster_s: {}, is_local_adapt: {}'.format(args.file, args.type, mse, mae,
+                                                                                     nrmse,args.seed, n_trend_clusters, n_seasonal_clusters,args.local_adapt))
