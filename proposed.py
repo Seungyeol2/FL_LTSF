@@ -66,6 +66,8 @@ if __name__ == '__main__':
         individual = False,
         enc_in = 1
     )
+    last_train_data = df.iloc[-configs.seq_len:].copy()
+    extended_test_df = pd.concat([last_train_data, test_df], axis=0).reset_index(drop=True)
 
     # Decompose Traffic Data
     decomposed_trend, decomposed_seasonal = decompose_data(normalized_df)
@@ -88,7 +90,7 @@ if __name__ == '__main__':
     print("Global Model: ", global_model )
 
     train_x, train_y, train_date = time_slide_df(train_df, configs.seq_len, configs.pred_len)
-    test_x, test_y, test_date = time_slide_df(test_df, configs.seq_len, configs.pred_len)
+    test_x, test_y, test_date = time_slide_df(extended_test_df, configs.seq_len, configs.pred_len)
 
     best_val_loss = None
     val_loss = []
@@ -281,3 +283,5 @@ if __name__ == '__main__':
     nrmse = nrmse / len(selected_cells)
     print('FedAvg File: {:} Type: {:} MSE: {:.4f} MAE: {:.4f}, NRMSE: {:.4f}, Seed: {}, n_cluster_t: {}, n_cluster_s: {}, is_local_adapt: {}'.format(args.file, args.type, mse, mae,
                                                                                      nrmse,args.seed, n_trend_clusters, n_seasonal_clusters,args.local_adapt))
+    df_pred.to_csv('[proposed] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_predictions.csv'.format(args.file, args.type, mse, mae), index=False)
+    df_truth.to_csv('[proposed] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_truth.csv'.format(args.file, args.type, mse, mae), index=False)
