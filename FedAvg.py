@@ -18,7 +18,7 @@ import csv
 sys.path.append('../')
 from utils.misc import args_parser, average_weights
 from utils.misc import get_data, process_isolated 
-from utils.misc import time_slide_df, restart_index
+from utils.misc import time_slide_df, restart_index, plot_predictions_for_cell, plot_metrics
 from utils.models import LSTM
 from models import Informer, Autoformer, Transformer, DLinear, Linear, NLinear
 
@@ -43,7 +43,7 @@ if __name__ == '__main__':
     train_df = df.iloc[:-24*7].copy()
     test_df = df.iloc[-24*7:].copy()
     test_df = restart_index(test_df)
-
+    
     device = 'cuda' if args.gpu else 'cpu'
     # print(selected_cells)
 
@@ -61,10 +61,14 @@ if __name__ == '__main__':
         individual = False,
         enc_in = 1
     )
+
     global_model = DLinear.Model(configs).to(device)
     global_model.train()
     global_weights = global_model.state_dict()
     print("Global Model: ", global_model )
+
+    last_train_data = df.iloc[-configs.seq_len:].copy()
+    extended_test_df = pd.concat([last_train_data, test_df], axis=0).reset_index(drop=True)
 
     # global_model = LSTM(args).to(device)
     # global_model.train()
@@ -72,8 +76,8 @@ if __name__ == '__main__':
     # global_weights = global_model.state_dict()
 
     train_x, train_y, train_date = time_slide_df(train_df, configs.seq_len, configs.pred_len)
-    test_x, test_y, test_date = time_slide_df(test_df, configs.seq_len, configs.pred_len)
-
+    test_x, test_y, test_date = time_slide_df(extended_test_df, configs.seq_len, configs.pred_len)
+    #print("Lenth of test_x: ", len(test_x))
     #train_ds = Data(train_x, train_y)
     #test_ds = Data(test_x, test_y)
 
@@ -159,3 +163,5 @@ if __name__ == '__main__':
     nrmse = nrmse / len(selected_cells)
     print('FedAvg File: {:} Type: {:} MSE: {:.4f} MAE: {:.4f}, NRMSE: {:.4f}, Seed: {}'.format(args.file, args.type, mse, mae,
                                                                                      nrmse, args.seed))
+    df_pred.to_csv('[FedAvg] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_predictions.csv'.format(args.file, args.type, mse, mae), index=False)
+    df_truth.to_csv('[FedAvg] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_truth.csv'.format(args.file, args.type, mse, mae), index=False)

@@ -26,6 +26,39 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 from sklearn.linear_model import LinearRegression
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+import matplotlib.pyplot as plt
+
+def plot_predictions_for_cell(cell, pred, truth, save_path="./"):
+    plt.figure(figsize=(10, 5))
+    
+    plt.plot(pred[cell], label='Predicted', color='blue', linewidth=1.5)
+    plt.plot(truth[cell], label='True', color='red', linestyle='dashed', linewidth=1.5)
+    
+    plt.title(f'Predictions vs True values for Cell {cell}')
+    plt.xlabel('Index')
+    plt.ylabel('Value')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(f"{save_path}/cell_{cell}_plot.png")  # 그래프를 파일로 저장
+    plt.close()  # 그래프 창 닫기
+
+def plot_metrics(mse, mae, nrmse, save_path="./"):
+    metrics_values = [mse, mae, nrmse]
+    metric_names = ['MSE', 'MAE', 'NRMSE']
+
+    plt.figure(figsize=(8, 5))
+    plt.bar(metric_names, metrics_values, color=['blue', 'green', 'red'])
+    
+    for i, value in enumerate(metrics_values):
+        plt.text(i, value + 0.01, f'{value:.4f}', ha='center', va='bottom')
+
+    plt.title('Performance Metrics')
+    plt.ylabel('Value')
+    plt.savefig(f"{save_path}/performance_metrics.png")  # 그래프를 파일로 저장
+    plt.close()  # 그래프 창 닫기
+
+
+
 
 def find_optimal_clusters(data, max_clusters):
     silhouette_vals = []
@@ -37,13 +70,13 @@ def find_optimal_clusters(data, max_clusters):
     optimal_cluster_num = silhouette_vals.index(max(silhouette_vals)) + 2  # +2 because the range starts from 2
     return optimal_cluster_num    
 
-def get_cluster_id(df):
+def get_cluster_id(df, n):
     max_clusters = 10
     df.dropna(inplace=True)
     # 클러스터 개수 찾기
     optimal_n_clusters = find_optimal_clusters(df.T, max_clusters)
     # K-means 알고리즘 적용
-    kmeans = KMeans(n_clusters=optimal_n_clusters, random_state=0).fit(df.T)  # Transpose to get 100 samples
+    kmeans = KMeans(n_clusters=n, random_state=0).fit(df.T)  # Transpose to get 100 samples
     # 라벨 가져오기
     labels = kmeans.labels_
     cell_labels = pd.DataFrame({'Cell': df.columns, 'Cluster': labels})
@@ -54,7 +87,7 @@ def get_cluster_id(df):
     # 결과 출력
     print(cluster_counts)
 
-    return cell_labels_series, optimal_n_clusters
+    return cell_labels_series, n
 
 class Data(Dataset):
     def __init__(self, X, Y):
@@ -98,7 +131,7 @@ def local_adaptation(args, model, x, y):
             batch_loss.append(loss.item())
 
         epoch_loss.append(sum(batch_loss) / len(batch_loss))
-        print("Local Loss: ",sum(epoch_loss)/len(epoch_loss))
+        #print("Local Loss: ",sum(epoch_loss)/len(epoch_loss))
     return model
 
 def average_tensors(tensor_list):

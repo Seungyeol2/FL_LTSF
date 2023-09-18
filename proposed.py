@@ -69,8 +69,8 @@ if __name__ == '__main__':
 
     # Decompose Traffic Data
     decomposed_trend, decomposed_seasonal = decompose_data(normalized_df)
-    trend_labels, n_trend_clusters = get_cluster_id(decomposed_trend)
-    seasonal_labels, n_seasonal_clusters = get_cluster_id(decomposed_seasonal)
+    trend_labels, n_trend_clusters = get_cluster_id(decomposed_trend, args.n_cluster_t)
+    seasonal_labels, n_seasonal_clusters = get_cluster_id(decomposed_seasonal, args.n_cluster_s)
     #print("Cell 8319 trend_lables: ", trend_labels[8319])
     #print("Cell 8319 seasonal_labels: ", seasonal_labels[8319])
 
@@ -86,9 +86,11 @@ if __name__ == '__main__':
     #global_down_trend_model_dict = global_down_trend_model.state_dict()
 
     print("Global Model: ", global_model )
+    last_train_data = df.iloc[-configs.seq_len:].copy()
+    extended_test_df = pd.concat([last_train_data, test_df], axis=0).reset_index(drop=True)
 
     train_x, train_y, train_date = time_slide_df(train_df, configs.seq_len, configs.pred_len)
-    test_x, test_y, test_date = time_slide_df(test_df, configs.seq_len, configs.pred_len)
+    test_x, test_y, test_date = time_slide_df(extended_test_df, configs.seq_len, configs.pred_len)
 
     best_val_loss = None
     val_loss = []
@@ -255,5 +257,7 @@ if __name__ == '__main__':
     mse = metrics.mean_squared_error(df_pred.values.ravel(), df_truth.values.ravel())
     mae = metrics.mean_absolute_error(df_pred.values.ravel(), df_truth.values.ravel())
     nrmse = nrmse / len(selected_cells)
-    print('FedAvg File: {:} Type: {:} MSE: {:.4f} MAE: {:.4f}, NRMSE: {:.4f}, Seed: {}, n_cluster_t: {}, n_cluster_s: {}, is_local_adapt: {}'.format(args.file, args.type, mse, mae,
+    print('proposed File: {:} Type: {:} MSE: {:.4f} MAE: {:.4f}, NRMSE: {:.4f}, Seed: {}, n_cluster_t: {}, n_cluster_s: {}, is_local_adapt: {}'.format(args.file, args.type, mse, mae,
                                                                                      nrmse,args.seed, n_trend_clusters, n_seasonal_clusters,args.local_adapt))
+    df_pred.to_csv('[proposed] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_predictions.csv'.format(args.file, args.type, mse, mae), index=False)
+    df_truth.to_csv('[proposed] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_truth.csv'.format(args.file, args.type, mse, mae), index=False)

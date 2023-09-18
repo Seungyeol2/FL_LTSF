@@ -67,13 +67,11 @@ if __name__ == '__main__':
     global_weights = global_model.state_dict()
     print("Global Model: ", global_model )
 
-    # global_model = LSTM(args).to(device)
-    # global_model.train()
-    # print(global_model)
-    # global_weights = global_model.state_dict()
+    last_train_data = df.iloc[-configs.seq_len:].copy()
+    extended_test_df = pd.concat([last_train_data, test_df], axis=0).reset_index(drop=True)
 
     train_x, train_y, train_date = time_slide_df(train_df, configs.seq_len, configs.pred_len)
-    test_x, test_y, test_date = time_slide_df(test_df, configs.seq_len, configs.pred_len)
+    test_x, test_y, test_date = time_slide_df(extended_test_df, configs.seq_len, configs.pred_len)
 
     #train_ds = Data(train_x, train_y)
     #test_ds = Data(test_x, test_y)
@@ -160,5 +158,7 @@ if __name__ == '__main__':
     mse = metrics.mean_squared_error(df_pred.values.ravel(), df_truth.values.ravel())
     mae = metrics.mean_absolute_error(df_pred.values.ravel(), df_truth.values.ravel())
     nrmse = nrmse / len(selected_cells)
-    print('FedAvg File: {:} Type: {:} MSE: {:.4f} MAE: {:.4f}, NRMSE: {:.4f}, Seed: {}'.format(args.file, args.type, mse, mae,
+    print('FedAtt File: {:} Type: {:} MSE: {:.4f} MAE: {:.4f}, NRMSE: {:.4f}, Seed: {}'.format(args.file, args.type, mse, mae,
                                                                                      nrmse, args.seed))
+    df_pred.to_csv('[FedAtt] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_predictions.csv'.format(args.file, args.type, mse, mae), index=False)
+    df_truth.to_csv('[FedAtt] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_truth.csv'.format(args.file, args.type, mse, mae), index=False)

@@ -144,6 +144,9 @@ if __name__ == '__main__':
     global_weights = global_model.state_dict()
     print("Global Model: ", global_model )
 
+    last_train_data = df.iloc[-configs.seq_len:].copy()
+    extended_test_df = pd.concat([last_train_data, test_df], axis=0).reset_index(drop=True)
+
     # get the statistical mean of the traffic data
     df = get_stat_mean(normalized_df)
     # print(df_mean.head())
@@ -171,7 +174,7 @@ if __name__ == '__main__':
             cluster_weights[label] = copy.deepcopy(warm_weights)
 
     train_x, train_y, train_date = time_slide_df(train_df, configs.seq_len, configs.pred_len)
-    test_x, test_y, test_date = time_slide_df(test_df, configs.seq_len, configs.pred_len)
+    test_x, test_y, test_date = time_slide_df(extended_test_df, configs.seq_len, configs.pred_len)
 
     # training
     best_val_loss = None
@@ -254,7 +257,7 @@ if __name__ == '__main__':
             group_id = int(df.loc[cell]['label'])
             cell_test_x, cell_test_y = test_x[cell], test_y[cell]
             test_loss, test_mse, test_nrmse, pred[cell], truth[cell] = test_inference_new(args, global_model, cell_test_x, cell_test_y)
-            # print(f'Cell: {cell} MSE: {test_mse:.4f}')
+            print(f'Cell: {cell} MSE: {test_mse:.4f}')
             nrmse += test_nrmse
 
             test_loss_list.append(test_loss)
@@ -276,3 +279,5 @@ if __name__ == '__main__':
             args.seed, args.local_bs, args.local_epoch, args.close_size, args.period_size,
             args.hidden_dim, args.phi, args.lr, args.w_lr,
             mse, mae, nrmse))
+    df_pred.to_csv('[FedDA] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_predictions.csv'.format(args.file, args.type, mse, mae), index=False)
+    df_truth.to_csv('[FedDA] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_truth.csv'.format(args.file, args.type, mse, mae), index=False)
