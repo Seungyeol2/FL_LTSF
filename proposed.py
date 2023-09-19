@@ -17,6 +17,7 @@ import random
 from argparse import Namespace
 import matplotlib.pyplot as plt
 import csv
+import pickle
 from collections import defaultdict
 
 sys.path.append('../')
@@ -71,19 +72,10 @@ if __name__ == '__main__':
     decomposed_trend, decomposed_seasonal = decompose_data(normalized_df)
     trend_labels, n_trend_clusters = get_cluster_id(decomposed_trend, args.n_cluster_t)
     seasonal_labels, n_seasonal_clusters = get_cluster_id(decomposed_seasonal, args.n_cluster_s)
-    #print("Cell 8319 trend_lables: ", trend_labels[8319])
-    #print("Cell 8319 seasonal_labels: ", seasonal_labels[8319])
 
     global_model = DLinear.Model(configs).to(device)
     global_model.train()
     global_weights = global_model.state_dict()
-    #global_up_trend_model = DLinear.Model(configs).to(device)
-    #global_down_trend_model = DLinear.Model(configs).to(device)
-    
-
-    # Save their state_dicts
-    #global_up_trend_model_dict = global_up_trend_model.state_dict()
-    #global_down_trend_model_dict = global_down_trend_model.state_dict()
 
     print("Global Model: ", global_model )
     last_train_data = df.iloc[-configs.seq_len:].copy()
@@ -103,9 +95,20 @@ if __name__ == '__main__':
     seasonal_cluster_weights = defaultdict(lambda: global_weights['Linear_Seasonal.weight'])
 
     # 1. 클러스터별 손실 초기화
+    trend_cluster_losses = {cluster_id: 0 for cluster_id in trend_labels.unique()}
+    seasonal_cluster_losses = {cluster_id: 0 for cluster_id in seasonal_labels.unique()}
+
+    trend_cluster_counts = {cluster_id: 0 for cluster_id in trend_labels.unique()}
+    seasonal_cluster_counts = {cluster_id: 0 for cluster_id in seasonal_labels.unique()}
+
+
+    # 1. 확장된 클러스터별 손실 저장 구조
+    trend_cluster_loss_hist = {cluster_id: [] for cluster_id in trend_labels.unique()}
+    seasonal_cluster_loss_hist = {cluster_id: [] for cluster_id in seasonal_labels.unique()}
+    
     cluster_losses = {cluster_id: 0 for cluster_id in trend_labels.unique()}
     cluster_counts = {cluster_id: 0 for cluster_id in trend_labels.unique()}
-
+    
     print("____________Training Start____________")
     for epoch in tqdm.tqdm(range(args.epochs)):
         m = max(int(args.frac * args.bs), 1)
@@ -115,30 +118,41 @@ if __name__ == '__main__':
         print(f'\n | Global Training Round: {epoch+1} |\n')
         global_model.train()
 
+        # 클러스터별 손실 업데이트
+        for cell, loss in cell_loss.items():
+            trend_cluster_id = trend_labels[cell]
+            seasonal_cluster_id = seasonal_labels[cell]
+            
+            trend_cluster_losses[trend_cluster_id] += loss
+            seasonal_cluster_losses[seasonal_cluster_id] += loss
+            trend_cluster_counts[trend_cluster_id] += 1
+            seasonal_cluster_counts[seasonal_cluster_id] += 1
+
         # 이전 라운드의 각 클러스터별 평균 손실 출력
         if epoch > 0:
-            for cluster_id, total_loss in cluster_losses.items():
-                avg_loss = total_loss / (cluster_counts[cluster_id] if cluster_counts[cluster_id] != 0 else 1)  # 분모가 0이 되는 것을 방지
-                print(f"Cluster {cluster_id} Average Loss in Round {epoch}: {avg_loss:.4f}")
+            for cluster_id, total_loss in trend_cluster_losses.items():
+                avg_loss = total_loss / (trend_cluster_counts[cluster_id] if trend_cluster_counts[cluster_id] != 0 else 1)
+                print(f"Trend Cluster {cluster_id} Average Loss in Round {epoch}: {avg_loss:.4f}")
+                trend_cluster_loss_hist[cluster_id].append(avg_loss)
+                
+            for cluster_id, total_loss in seasonal_cluster_losses.items():
+                avg_loss = total_loss / (seasonal_cluster_counts[cluster_id] if seasonal_cluster_counts[cluster_id] != 0 else 1)
+                print(f"Seasonal Cluster {cluster_id} Average Loss in Round {epoch}: {avg_loss:.4f}")
+                seasonal_cluster_loss_hist[cluster_id].append(avg_loss)
 
-        # 1. 클러스터별 손실 업데이트
-        for cell, loss in cell_loss.items():
-            cluster_id = trend_labels[cell]
-            cluster_losses[cluster_id] += loss
-            cluster_counts[cluster_id] += 1
-
-        all_clusters_have_values = all(v != 0 for v in cluster_losses.values())
+        # 'trend_labels' 기반의 클러스터 샘플링
+        all_clusters_have_values = all(v != 0 for v in trend_cluster_losses.values())
         if all_clusters_have_values:
             # 클러스터별 손실을 기반으로 샘플링 확률 계산
-            total_loss = sum(cluster_losses.values())
-            sampling_probabilities = {cluster_id: loss / total_loss for cluster_id, loss in cluster_losses.items()}
+            total_loss = sum(trend_cluster_losses.values())
+            sampling_probabilities = {cluster_id: loss / total_loss for cluster_id, loss in trend_cluster_losses.items()}
 
             sampled_cells = []
-            cluster_sampling_counts = {cluster_id: 0 for cluster_id in cluster_losses.keys()}  # 클러스터별 샘플링 횟수를 저장
+            cluster_sampling_counts = {cluster_id: 0 for cluster_id in trend_cluster_losses.keys()}  # 클러스터별 샘플링 횟수를 저장
 
             while len(sampled_cells) < 10:
                 # 확률에 따라 클러스터 하나를 선택합니다.
-                selected_cluster = np.random.choice(list(cluster_losses.keys()), p=list(sampling_probabilities.values()))
+                selected_cluster = np.random.choice(list(trend_cluster_losses.keys()), p=list(sampling_probabilities.values()))
                 # 선택된 클러스터에서의 셀들을 가져옵니다.
                 cells_in_cluster = [cell for cell in selected_cells if trend_labels[cell] == selected_cluster]
                 
@@ -152,7 +166,7 @@ if __name__ == '__main__':
 
             # 샘플링 정보 출력
             for cluster_id, count in cluster_sampling_counts.items():
-                print(f"Cluster {cluster_id} sampled {count} times.")
+                print(f"Trend Cluster {cluster_id} sampled {count} times.")
         else:
             # 랜덤 샘플링
             sampled_cells = random.sample(selected_cells, m)
@@ -200,16 +214,45 @@ if __name__ == '__main__':
 
         for id in local_seasonal_weights.keys():
             seasonal_cluster_weights[id] = average_tensors(local_seasonal_weights[id])
+    '''
 
-    for cluster_id, losses in cluster_losses.items():
-        plt.plot(losses, '-o', label=f'Cluster {cluster_id} Loss')
-        
-    plt.title('Cluster-wise Loss Over Epochs')
+
+    # Trend Cluster의 손실 그래프
+    plt.figure(figsize=(12, 6))
+    for cluster_id, losses in trend_cluster_loss_hist.items():
+        plt.plot(losses, '-o', label=f'Trend Cluster {cluster_id} Loss', linestyle='-', linewidth=2.0)
+
+    plt.title('Trend Cluster-wise Loss Over Epochs')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig('clusterwise_loss.png')
+    plt.grid(True, which="both", ls="--", c='0.7')
+    plt.tight_layout()
+    plt.savefig('trend_clusterwise_loss.png')
     plt.show()
+
+    # Seasonal Cluster의 손실 그래프
+    plt.figure(figsize=(12, 6))
+    for cluster_id, losses in seasonal_cluster_loss_hist.items():
+        plt.plot(losses, '-o', label=f'Seasonal Cluster {cluster_id} Loss', linestyle='-', linewidth=2.0)
+
+    plt.title('Seasonal Cluster-wise Loss Over Epochs')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True, which="both", ls="--", c='0.7')
+    plt.tight_layout()
+    plt.savefig('seasonal_clusterwise_loss.png')
+    plt.show()
+    '''
+
+    # 데이터 저장
+    with open('trend_cluster_loss_hist.pkl', 'wb') as f:
+        pickle.dump(trend_cluster_loss_hist, f)
+
+    with open('seasonal_cluster_loss_hist.pkl', 'wb') as f:
+        pickle.dump(seasonal_cluster_loss_hist, f)
+
     # Test model accuracy
     pred, truth = {}, {}
     test_loss_list = []
