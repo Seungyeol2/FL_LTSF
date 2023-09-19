@@ -102,13 +102,16 @@ if __name__ == '__main__':
     trend_cluster_weights = defaultdict(lambda: global_weights['Linear_Trend.weight'])
     seasonal_cluster_weights = defaultdict(lambda: global_weights['Linear_Seasonal.weight'])
 
-    # 1. 클러스터별 손실 초기화
-    cluster_losses = {cluster_id: 0 for cluster_id in trend_labels.unique()}
-    cluster_counts = {cluster_id: 0 for cluster_id in trend_labels.unique()}
+    # 1. Initialize losses and counts for each cluster type
+    trend_cluster_losses = {cluster_id: 0 for cluster_id in trend_labels.unique()}
+    seasonal_cluster_losses = {cluster_id: 0 for cluster_id in seasonal_labels.unique()}
+    trend_cluster_counts = {cluster_id: 0 for cluster_id in trend_labels.unique()}
+    seasonal_cluster_counts = {cluster_id: 0 for cluster_id in seasonal_labels.unique()}
 
-    # 1. 각 클러스터의 최근 5번의 손실 값을 저장할 dictionary
-    recent_cluster_losses = {cluster_id: [float('inf')]*5 for cluster_id in cluster_losses.keys()}
-    overfitting_clusters = set()  # 오버피팅 감지된 클러스터 저장
+    # Store the recent 5 losses for each cluster type
+    recent_trend_cluster_losses = {cluster_id: [float('inf')]*5 for cluster_id in trend_cluster_losses.keys()}
+    recent_seasonal_cluster_losses = {cluster_id: [float('inf')]*5 for cluster_id in seasonal_cluster_losses.keys()}
+    overfitting_clusters = set()  # Detect overfitting for clusters
 
     print("____________Training Start____________")
     for epoch in tqdm.tqdm(range(args.epochs)):
@@ -119,52 +122,71 @@ if __name__ == '__main__':
         print(f'\n | Global Training Round: {epoch+1} |\n')
         global_model.train()
 
-        # 1. 클러스터별 손실 업데이트
+        # Update the loss values for each cluster type
         for cell, loss in cell_loss.items():
-            cluster_id = trend_labels[cell]
-            cluster_losses[cluster_id] += loss
-            cluster_counts[cluster_id] += 1
-        
-        # 2. 이전 라운드의 각 클러스터별 평균 손실 출력
-        for cluster_id, total_loss in cluster_losses.items():
-            avg_loss = total_loss / (cluster_counts[cluster_id] if cluster_counts[cluster_id] != 0 else 1)
-            print(f"Cluster {cluster_id} Average Loss in Round {epoch+1}: {avg_loss:.4f}")
-            # 클러스터별 오버피팅 감지
-            if all([prev_loss < avg_loss for prev_loss in recent_cluster_losses[cluster_id]]):  
-                print(f"Detected overfitting for Cluster {cluster_id}: Last 5 losses: {recent_cluster_losses[cluster_id]}, New loss: {avg_loss}")
-                overfitting_clusters.add(cluster_id)
-            if epoch > 0:
-                if avg_loss != 0.0:
-                    recent_cluster_losses[cluster_id] = recent_cluster_losses[cluster_id][1:] + [avg_loss]  # 3. 최근 손실 값 업데이트
+            trend_cluster_id = trend_labels[cell]
+            seasonal_cluster_id = seasonal_labels[cell]
 
-        # 모든 클러스터에서 오버피팅이 감지되면 학습 중단
-        if len(overfitting_clusters) == len(cluster_losses.keys()):
+            trend_cluster_losses[trend_cluster_id] += loss
+            trend_cluster_counts[trend_cluster_id] += 1
+
+            seasonal_cluster_losses[seasonal_cluster_id] += loss
+            seasonal_cluster_counts[seasonal_cluster_id] += 1
+        
+        # Detect overfitting for trend clusters
+        for cluster_id, total_loss in trend_cluster_losses.items():
+            avg_loss = total_loss / (trend_cluster_counts[cluster_id] if trend_cluster_counts[cluster_id] != 0 else 1)
+            if all([prev_loss < avg_loss for prev_loss in recent_trend_cluster_losses[cluster_id]]):  
+                print(f"Detected overfitting for Trend Cluster {cluster_id}: Last 5 losses: {recent_trend_cluster_losses[cluster_id]}, New loss: {avg_loss}")
+                overfitting_clusters.add(cluster_id)
+            if epoch > 0 and avg_loss != 0.0:
+                recent_trend_cluster_losses[cluster_id] = recent_trend_cluster_losses[cluster_id][1:] + [avg_loss]
+
+        # Detect overfitting for seasonal clusters
+        for cluster_id, total_loss in seasonal_cluster_losses.items():
+            avg_loss = total_loss / (seasonal_cluster_counts[cluster_id] if seasonal_cluster_counts[cluster_id] != 0 else 1)
+            if all([prev_loss < avg_loss for prev_loss in recent_seasonal_cluster_losses[cluster_id]]):
+                print(f"Detected overfitting for Seasonal Cluster {cluster_id}: Last 5 losses: {recent_seasonal_cluster_losses[cluster_id]}, New loss: {avg_loss}")
+                overfitting_clusters.add(cluster_id)
+            if epoch > 0 and avg_loss != 0.0:
+                recent_seasonal_cluster_losses[cluster_id] = recent_seasonal_cluster_losses[cluster_id][1:] + [avg_loss]
+
+        # If overfitting is detected in all clusters, stop the training
+        all_trend_clusters = len(trend_cluster_losses.keys())
+        all_seasonal_clusters = len(seasonal_cluster_losses.keys())
+
+        # If overfitting is detected in all clusters, stop the training
+        all_trend_clusters = len(trend_cluster_losses.keys())
+        all_seasonal_clusters = len(seasonal_cluster_losses.keys())
+        if len(overfitting_clusters) >= (all_trend_clusters + all_seasonal_clusters):
             print("Overfitting detected in all clusters. Stopping training.")
             break
 
-        all_clusters_have_values = all(v != 0 for v in cluster_losses.values())
+        all_clusters_have_values = all(val != 0 for val in trend_cluster_losses.values())
 
         if all_clusters_have_values:
             # 클러스터별 손실을 기반으로 샘플링 확률 계산
-            total_loss = sum(cluster_losses.values())
-            sampling_probabilities = {cluster_id: loss / total_loss for cluster_id, loss in cluster_losses.items()}
+            total_loss = sum(trend_cluster_losses.values())
+            sampling_probabilities = {cluster_id: loss / total_loss for cluster_id, loss in trend_cluster_losses.items()}
 
             sampled_cells = []
-            cluster_sampling_counts = {cluster_id: 0 for cluster_id in cluster_losses.keys()}  # 클러스터별 샘플링 횟수를 저장
+            cluster_sampling_counts = {cluster_id: 0 for cluster_id in trend_cluster_losses.keys()}  # 클러스터별 샘플링 횟수를 저장
 
             while len(sampled_cells) < 10:
-                available_clusters = [cluster_id for cluster_id in cluster_losses.keys() if cluster_id not in overfitting_clusters]
-                #print(available_clusters)
+                available_clusters = [cluster_id for cluster_id in trend_cluster_losses.keys() if cluster_id not in overfitting_clusters]
+                
                 available_probabilities = [sampling_probabilities[cluster_id] for cluster_id in available_clusters]
-                #print(available_probabilities)
-
+                
                 # 확률 정규화
                 sum_probs = sum(available_probabilities)
                 available_probabilities = [prob/sum_probs for prob in available_probabilities]
+
                 # 확률에 따라 클러스터 하나를 선택합니다.
                 selected_cluster = np.random.choice(available_clusters, p=available_probabilities)
+                
                 # 선택된 클러스터에서의 셀들을 가져옵니다.
-                cells_in_cluster = [cell for cell in selected_cells if trend_labels[cell] == selected_cluster]
+                cells_in_cluster = [cell for cell in trend_labels.index if trend_labels[cell] == selected_cluster]
+                
                 # 선택된 클러스터의 셀 중에서 아직 샘플링되지 않은 셀을 랜덤하게 하나 선택합니다.
                 available_cells = [cell for cell in cells_in_cluster if cell not in sampled_cells]
                 if available_cells:  # 샘플링할 수 있는 셀이 있을 때만 샘플링
@@ -177,12 +199,11 @@ if __name__ == '__main__':
                 print(f"Cluster {cluster_id} sampled {count} times.")
         else:
             # 랜덤 샘플링 시 오버피팅된 클러스터에 속하는 셀은 제외
-            #available_cells = [cell for cell in selected_cells if trend_labels[cell] not in overfitting_clusters]
-            sampled_cells = random.sample(selected_cells, m)
+            available_cells = [cell for cell in trend_labels.keys() if trend_labels[cell] not in overfitting_clusters]
+            sampled_cells = random.sample(available_cells, m)
 
         print(f"Round {epoch+1} sampled_cells {sampled_cells} n_sampled_cells {len(sampled_cells)}")
-        #cell_idx = random.sample(selected_cells, m)
-        # print(cell_idx)
+
         
         for cell in sampled_cells:
             #cell_train, cell_test = train[cell], test[cell]
