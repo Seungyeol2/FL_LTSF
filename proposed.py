@@ -160,7 +160,7 @@ if __name__ == '__main__':
         print(f"Round {epoch+1} sampled_cells {sampled_cells} n_sampled_cells {len(sampled_cells)}")
         #cell_idx = random.sample(selected_cells, m)
         # print(cell_idx)
-        
+
         for cell in sampled_cells:
             #cell_train, cell_test = train[cell], test[cell]
             cell_train_x, cell_train_y = train_x[cell], train_y[cell]
@@ -190,23 +190,7 @@ if __name__ == '__main__':
         # Calculate and print the average loss for this epoch
         avg_loss = sum(local_losses) / len(local_losses)
         print(f"Average loss for epoch {epoch+1}: {avg_loss}")
-        '''
-        plt.figure(figsize=(10, 6))
-        plt.plot(loss_hist, '-o', label='Global Model Loss')
-        plt.title('Global Model Loss Over Rounds')
-        plt.xlabel('Rounds')
-        plt.ylabel('Loss')
-        plt.legend()
-        plt.savefig('global_model_loss.png')  # 파일 저장
-        plt.show()
-        
-        # 손실 데이터를 CSV 파일로 저장
-        with open('[FedAvg]global_model_loss.csv', 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(["Round", "Loss"])  # 컬럼 헤더 작성
-            for i, loss in enumerate(loss_hist):
-                writer.writerow([i, loss])
-        '''
+
         # Update global model
         global_weights = average_weights(local_weights)
         global_model.load_state_dict(global_weights)
@@ -217,7 +201,15 @@ if __name__ == '__main__':
         for id in local_seasonal_weights.keys():
             seasonal_cluster_weights[id] = average_tensors(local_seasonal_weights[id])
 
-
+    for cluster_id, losses in cluster_losses.items():
+        plt.plot(losses, '-o', label=f'Cluster {cluster_id} Loss')
+        
+    plt.title('Cluster-wise Loss Over Epochs')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig('clusterwise_loss.png')
+    plt.show()
     # Test model accuracy
     pred, truth = {}, {}
     test_loss_list = []
@@ -259,5 +251,5 @@ if __name__ == '__main__':
     nrmse = nrmse / len(selected_cells)
     print('proposed File: {:} Type: {:} MSE: {:.4f} MAE: {:.4f}, NRMSE: {:.4f}, Seed: {}, n_cluster_t: {}, n_cluster_s: {}, is_local_adapt: {}'.format(args.file, args.type, mse, mae,
                                                                                      nrmse,args.seed, n_trend_clusters, n_seasonal_clusters,args.local_adapt))
-    df_pred.to_csv('[proposed] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_predictions.csv'.format(args.file, args.type, mse, mae), index=False)
-    df_truth.to_csv('[proposed] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_truth.csv'.format(args.file, args.type, mse, mae), index=False)
+    #df_pred.to_csv('[proposed] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_predictions.csv'.format(args.file, args.type, mse, mae), index=False)
+    #df_truth.to_csv('[proposed] File:{:}_Type:{:}_MSE:{:.4f}_MAE:{:.4f}_truth.csv'.format(args.file, args.type, mse, mae), index=False)
