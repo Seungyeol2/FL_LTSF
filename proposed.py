@@ -68,7 +68,8 @@ if __name__ == '__main__':
         enc_in = 1
     )
 
-    # Decompose Traffic Data
+    # Decompose Traffic 
+    # Data
     decomposed_trend, decomposed_seasonal = decompose_data(normalized_df)
     trend_labels, n_trend_clusters = get_cluster_id(decomposed_trend, args.n_cluster_t)
     seasonal_labels, n_seasonal_clusters = get_cluster_id(decomposed_seasonal, args.n_cluster_s)
@@ -109,6 +110,8 @@ if __name__ == '__main__':
     cluster_losses = {cluster_id: 0 for cluster_id in trend_labels.unique()}
     cluster_counts = {cluster_id: 0 for cluster_id in trend_labels.unique()}
     
+    trend_weights_history = defaultdict(list)
+    seasonal_weights_history = defaultdict(list)
     print("____________Training Start____________")
     for epoch in tqdm.tqdm(range(args.epochs)):
         m = max(int(args.frac * args.bs), 1)
@@ -214,45 +217,44 @@ if __name__ == '__main__':
 
         for id in local_seasonal_weights.keys():
             seasonal_cluster_weights[id] = average_tensors(local_seasonal_weights[id])
-    '''
 
 
-    # Trend Cluster의 손실 그래프
-    plt.figure(figsize=(12, 6))
-    for cluster_id, losses in trend_cluster_loss_hist.items():
-        plt.plot(losses, '-o', label=f'Trend Cluster {cluster_id} Loss', linestyle='-', linewidth=2.0)
-
-    plt.title('Trend Cluster-wise Loss Over Epochs')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True, which="both", ls="--", c='0.7')
-    plt.tight_layout()
-    plt.savefig('trend_clusterwise_loss.png')
-    plt.show()
-
-    # Seasonal Cluster의 손실 그래프
-    plt.figure(figsize=(12, 6))
-    for cluster_id, losses in seasonal_cluster_loss_hist.items():
-        plt.plot(losses, '-o', label=f'Seasonal Cluster {cluster_id} Loss', linestyle='-', linewidth=2.0)
-
-    plt.title('Seasonal Cluster-wise Loss Over Epochs')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True, which="both", ls="--", c='0.7')
-    plt.tight_layout()
-    plt.savefig('seasonal_clusterwise_loss.png')
-    plt.show()
-    '''
-
-    # 데이터 저장
+    # 가중치 저장
+    # Before saving, convert defaultdict to regular dict
+    trend_cluster_weights_dict = dict(trend_cluster_weights)
+    torch.save(trend_cluster_weights_dict, 'trend_cluster_weights.pt')    
+    trend_cluster_weights_dict = dict(seasonal_cluster_weights)
+    torch.save(trend_cluster_weights_dict, 'seasonal_cluster_weights.pt')
+    
+    # 시즈널/트렌드 로스 함수 데이터 저장
     with open('trend_cluster_loss_hist.pkl', 'wb') as f:
         pickle.dump(trend_cluster_loss_hist, f)
-
     with open('seasonal_cluster_loss_hist.pkl', 'wb') as f:
         pickle.dump(seasonal_cluster_loss_hist, f)
 
+    '''
+    # 1. 특정 클러스터의 가중치 로드
+    trend_cluster_id_to_visualize = 0  # 예시로 0번 클러스터를 선택
+    cluster_weight = trend_cluster_weights[trend_cluster_id_to_visualize].cpu()
+
+    # 2. 전역 모델에 해당 가중치 로드
+    current_weights = global_model.state_dict()
+    current_weights['Linear_Trend.weight'] = cluster_weight
+    global_model.load_state_dict(current_weights)
+
+    # 3. 해당 가중치를 사용하여 시각화
+    weights_list = {}
+    weights_list['trend'] = global_model.Linear_Trend.weight.cpu().detach().numpy()
+    weights_list['seasonal'] = global_model.Linear_Seasonal.weight.cpu().detach().numpy()
+
+    for name, w in weights_list.items():    
+        fig, ax = plt.subplots()    
+        plt.title(name)
+        im = ax.imshow(w, cmap='plasma_r',)
+        fig.colorbar(im, pad=0.03)
+        plt.savefig('test_abc')
+    '''
+           
     # Test model accuracy
     pred, truth = {}, {}
     test_loss_list = []
